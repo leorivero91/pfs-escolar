@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { EstudianteDto } from './dto/create-estudiante.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOneOptions, Repository } from 'typeorm';
 import { Estudiante } from './entities/estudiante.entity';
 import { EstudianteClase } from './entities/estudiante_clase.entity';
 import { Clase } from 'src/clase/entities/clase.entity';
@@ -21,37 +21,32 @@ export class EstudianteService {
 
 
   async findAllRaw(): Promise<EstudianteDto>{
-    this.estudiantes = [] ;
-    let datos = await this.estudianteRepository.query("SELECT * from estudiantes ");
+   
+    const datos = await this.estudianteRepository.query("SELECT * from estudiantes ");
 
     datos.forEach(element => {
-       let estudiante: Estudiante = new Estudiante[(element.nombre,element.apellido,element.fecha_nacimiento,element.estudianteClase)]
-       this.estudiantes.push(estudiante)
+       let estudiante: Estudiante = new Estudiante[element['nombre']['apellido']['fecha_nacimiento']['estudianteClase']];       this.estudiantes.push(estudiante)
     });
 
     return this.estudiantes;
 
   }
 
-  async create(EstudianteDto: EstudianteDto) {
-    // const fecha = new Date()
-    const estudiante: Estudiante = await this.estudianteRepository.save(estudiante)
+  async create(EstudianteDto: EstudianteDto): Promise<boolean>{
+  try{
+   let estudiante: Estudiante = await this.estudianteRepository.save(new Estudiante(EstudianteDto.nombre,EstudianteDto.apellido,EstudianteDto.fecha_nacimiento))
     if(estudiante)
-      return `Se creo el estudiante ${estudiante.nombre}`;
-    else
-     return 'no se creo el estudiante';  
-  }
-
-async createConRelacion( estudianteDto:EstudianteDto ):Promise<boolean> {
-  let estudiante: Estudiante= new Estudiante(estudianteDto.nombre,estudianteDto.apellido,estudianteDto.fecha_nacimiento);
-  const clase:Clase[] = await this.claseRepository.find();
-  if(clase)
-   estudiante.clases= clase;
-  await this.estudianteRepository.save(estudiante);
-  if(estudiante)
     return true;
-  return false
-}
+    else 
+      throw new Error( ' No se creo el estudiante')
+  }catch(error){
+    throw new HttpException({
+      status: HttpStatus.CONFLICT,
+      error: 'Error en create estudiante - ' + error
+  },HttpStatus.NOT_FOUND)
+  }  }
+
+
   async addClase(body): Promise<any>{
     const {claseId, estudianteId} = body;
     const estudiante= await this.estudianteRepository.findOne({where : {id:estudianteId}})
@@ -66,19 +61,74 @@ async createConRelacion( estudianteDto:EstudianteDto ):Promise<boolean> {
     return await this.estudianteClaseRepository.save(new EstudianteClase(estudianteId,claseId));
     }
 
-  findAll() {
-    return `This action returns all estudiante`;
+  async findById(id :number) : Promise<EstudianteDto> {
+    try{
+      const criterio : FindOneOptions = { where: { id:id} };
+      const estudiante : Estudiante  = await this.estudianteRepository.findOne( criterio );
+      if (estudiante) {
+        const EstudianteDto: EstudianteDto = {
+         nombre: estudiante.getNombre(), 
+         apellido: estudiante.getApellido(),
+         fecha_nacimiento: estudiante.getFechaNacimiento(),
+         estudianteClase: estudiante.getEstudianteClase(),
+          };
+          return EstudianteDto;
+      } else {
+          throw new Error('No se encuentra el estudiante');
+        }
+      }catch(error){
+          throw new HttpException({
+              status: HttpStatus.CONFLICT,
+              error: 'Error en estudiante findbyid - ' + error
+          },HttpStatus.NOT_FOUND)
+      }
+    }
+
+    async update(EstudianteDto:EstudianteDto, id:number ): Promise<string>{
+      try{
+        const criterio: FindOneOptions = {where: {id:id}}
+
+        let estudiante: Estudiante = await this.estudianteRepository.findOne(criterio);
+        let estudianteViejo = {
+          nombre: estudiante.getNombre(), 
+          apellido: estudiante.getApellido(),
+          fecha_nacimiento: estudiante.getFechaNacimiento(),
+          estudianteClase: estudiante.getEstudianteClase() };
+        if(estudiante){
+          estudiante.setNombre(EstudianteDto.nombre),
+          estudiante.setApellido(EstudianteDto.apellido),
+          estudiante.setFechaNacimiento(EstudianteDto.fecha_nacimiento),
+          estudiante.setEstudianteClase(EstudianteDto.estudianteClase);
+          
+          estudiante = await this.estudianteRepository.save(estudiante);
+          return `Se reemplazo al : ${estudianteViejo} --> por ${estudiante.getNombre},${estudiante.getApellido}, ${estudiante.getFechaNacimiento}, ${estudiante.getEstudianteClase} `;
+        }else {
+          return 'No se pudo reemplazar';    }
+      }catch(error){
+          throw new HttpException({
+              status: HttpStatus.CONFLICT,
+              error: 'Error en estudiante update - ' + error
+          },HttpStatus.NOT_FOUND)
+    }
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} estudiante`;
-  }
-
-  update(id: number, EstudianteDto: EstudianteDto) {
-    return `This action updates a #${id} estudiante`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} estudiante`;
+  async delete(id: number){
+    try{
+      const criterio: FindOneOptions = { where: {id:id} };
+      let estudiante : Estudiante = await this.estudianteRepository.findOne(criterio);
+      if(!estudiante)
+       throw new Error('No se pudo eliminar el estudiante ') 
+      else { 
+        await this.estudianteRepository.remove(estudiante);
+        return { id:id,
+              message: ' se elimino correctamente la escuela'};
+      }
+    } catch(error){
+      throw new HttpException({
+        status: HttpStatus.NOT_FOUND,
+        error: ' Error en estudiante delete - ' + error
+      }, HttpStatus.NOT_FOUND)
+    }
+   }
   }
 }
